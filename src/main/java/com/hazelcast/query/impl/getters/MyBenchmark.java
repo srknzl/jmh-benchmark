@@ -60,24 +60,37 @@ import org.openjdk.jmh.infra.Blackhole;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-class IdentifiedDataWithLongCompactPojo {
+class LongCompactPojo {
     public Integer[] numbers;
     public Long value;
 
-    public IdentifiedDataWithLongCompactPojo() {
+    public LongCompactPojo() {
     }
 
-    public IdentifiedDataWithLongCompactPojo(Integer[] numbers, Long value) {
+    public LongCompactPojo(Integer[] numbers, Long value) {
         this.numbers = numbers;
         this.value = value;
     }
 }
 
-class IdentifiedDataWithLongCompactSerializer implements CompactSerializer<IdentifiedDataWithLongCompactPojo> {
+class CompactCompactPojo {
+    public Integer[] numbers;
+    public LongCompactPojo nested;
+
+    public CompactCompactPojo() {
+    }
+
+    public CompactCompactPojo(LongCompactPojo nested, Integer[] numbers) {
+        this.nested = nested;
+        this.numbers = numbers;
+    }
+}
+
+class LongCompactPojoSerializer implements CompactSerializer<LongCompactPojo> {
     @NotNull
     @Override
-    public IdentifiedDataWithLongCompactPojo read(@NotNull CompactReader compactReader) {
-        IdentifiedDataWithLongCompactPojo pojo = new IdentifiedDataWithLongCompactPojo();
+    public LongCompactPojo read(@NotNull CompactReader compactReader) {
+        LongCompactPojo pojo = new LongCompactPojo();
         pojo.value = compactReader.readInt64("value");
         pojo.numbers = new Integer[compactReader.readInt32("numbers-size")];
         for (int i = 0; i < pojo.numbers.length; i++) {
@@ -89,7 +102,7 @@ class IdentifiedDataWithLongCompactSerializer implements CompactSerializer<Ident
     }
 
     @Override
-    public void write(@NotNull CompactWriter compactWriter, @NotNull IdentifiedDataWithLongCompactPojo pojo) {
+    public void write(@NotNull CompactWriter compactWriter, @NotNull LongCompactPojo pojo) {
         compactWriter.writeInt64("value", pojo.value);
         compactWriter.writeInt32("numbers-size", pojo.numbers.length);
         for (int i = 0; i < pojo.numbers.length; i++) {
@@ -104,22 +117,61 @@ class IdentifiedDataWithLongCompactSerializer implements CompactSerializer<Ident
     }
 }
 
+class CompactCompactPojoSerializer implements CompactSerializer<CompactCompactPojo> {
+    @NotNull
+    @Override
+    public CompactCompactPojo read(@NotNull CompactReader compactReader) {
+        CompactCompactPojo pojo = new CompactCompactPojo();
+        pojo.nested = compactReader.readCompact("nested");
+        pojo.numbers = new Integer[compactReader.readInt32("numbers-size")];
+        for (int i = 0; i < pojo.numbers.length; i++) {
+            if (compactReader.readBoolean("numbers-present-" + i)) {
+                pojo.numbers[i] = compactReader.readInt32("numbers-" + i);
+            }
+        }
+        return pojo;
+    }
+
+    @Override
+    public void write(@NotNull CompactWriter compactWriter, @NotNull CompactCompactPojo pojo) {
+        compactWriter.writeCompact("nested", pojo.nested);
+        compactWriter.writeInt32("numbers-size", pojo.numbers.length);
+        for (int i = 0; i < pojo.numbers.length; i++) {
+            Integer number = pojo.numbers[i];
+            if (number != null) {
+                compactWriter.writeBoolean("numbers-present-" + i, true);
+                compactWriter.writeInt32("numbers-" + i, number);
+            } else {
+                compactWriter.writeBoolean("numbers-present-" + i, false);
+            }
+        }
+    }
+}
 
 @State(Scope.Benchmark)
 public class MyBenchmark {
-    private final GenericRecordQueryReader reader;
+    private final GenericRecordQueryReader readerLong;
+    private final GenericRecordQueryReader readerNested;
     HazelcastInstance instance;
     CompactGetter compactGetter;
-    Data data;
+    Data dataLong;
+    Data dataNested;
 
     @Benchmark
     @BenchmarkMode(Mode.AverageTime)
     @OutputTimeUnit(TimeUnit.NANOSECONDS)
-    @Fork(1)
-    @Warmup(iterations = 2, time = 3)
-    public void compact(Blackhole blackhole) throws Exception {
+    public void compactLong(Blackhole blackhole) throws Exception {
         for (int i = 0; i < 1000; i++) {
-            blackhole.consume(reader.read("value"));
+            blackhole.consume(readerLong.read("value"));
+        }
+    }
+
+    @Benchmark
+    @BenchmarkMode(Mode.AverageTime)
+    @OutputTimeUnit(TimeUnit.NANOSECONDS)
+    public void compactNested(Blackhole blackhole) throws Exception {
+        for (int i = 0; i < 1000; i++) {
+            blackhole.consume(readerNested.read("nested.value"));
         }
     }
 
@@ -134,17 +186,28 @@ public class MyBenchmark {
                         .setCompactSerializationConfig(
                                 new CompactSerializationConfig()
                                         .setEnabled(true)
-                                        .register(IdentifiedDataWithLongCompactPojo.class, "identifiedDataWithLongCompactPojo", new IdentifiedDataWithLongCompactSerializer()))
+                                        .register(LongCompactPojo.class, "longCompactPojo", new LongCompactPojoSerializer())
+                                        .register(CompactCompactPojo.class, "compactCompactPojo", new CompactCompactPojoSerializer())
+                        )
         ));
         HazelcastInstanceProxy hazelcastInstanceImpl = (HazelcastInstanceProxy) instance;
         InternalSerializationService serializationService = hazelcastInstanceImpl.getSerializationService();
         compactGetter = new CompactGetter(serializationService);
 
-        IdentifiedDataWithLongCompactPojo pojo = new IdentifiedDataWithLongCompactPojo(new Integer[20], 0L);
-        data = serializationService.toData(pojo);
+        LongCompactPojo pojo = new LongCompactPojo(new Integer[20], 0L);
+        dataLong = serializationService.toData(pojo);
+
+        CompactCompactPojo pojo2 = new CompactCompactPojo(pojo, new Integer[20]);
+        dataNested = serializationService.toData(pojo2);
         try {
-            InternalGenericRecord internalGenericRecord = serializationService.readAsInternalGenericRecord(data);
-            reader = new GenericRecordQueryReader(internalGenericRecord);
+            InternalGenericRecord internalGenericRecord = serializationService.readAsInternalGenericRecord(dataLong);
+            readerLong = new GenericRecordQueryReader(internalGenericRecord);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            InternalGenericRecord internalGenericRecord = serializationService.readAsInternalGenericRecord(dataNested);
+            readerNested = new GenericRecordQueryReader(internalGenericRecord);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
