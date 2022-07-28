@@ -48,6 +48,7 @@ import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.GenericRecordQueryReader;
 import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
@@ -169,7 +170,7 @@ public class MyBenchmark {
     @OutputTimeUnit(TimeUnit.NANOSECONDS)
     public void compactNested(Blackhole blackhole) throws Exception {
         for (int i = 0; i < 1000; i++) {
-            blackhole.consume(readerNested.read("nested.value"));
+            blackhole.consume(readerNested.read("nested"));
         }
     }
 
