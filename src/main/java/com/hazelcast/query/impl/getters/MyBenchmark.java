@@ -114,6 +114,16 @@ class LongCompactPojoSerializer implements CompactSerializer<LongCompactPojo> {
             }
         }
     }
+
+    @Override
+    public String getTypeName() {
+        return "longCompactPojo";
+    }
+
+    @Override
+    public Class<LongCompactPojo> getCompactClass() {
+        return LongCompactPojo.class;
+    }
 }
 
 class CompactCompactPojoSerializer implements CompactSerializer<CompactCompactPojo> {
@@ -144,6 +154,16 @@ class CompactCompactPojoSerializer implements CompactSerializer<CompactCompactPo
                 compactWriter.writeBoolean("numbers-present-" + i, false);
             }
         }
+    }
+
+    @Override
+    public String getTypeName() {
+        return "compactCompactPojo";
+    }
+
+    @Override
+    public Class<CompactCompactPojo> getCompactClass() {
+        return CompactCompactPojo.class;
     }
 }
 
@@ -184,9 +204,8 @@ public class MyBenchmark {
                 new SerializationConfig()
                         .setCompactSerializationConfig(
                                 new CompactSerializationConfig()
-                                        .setEnabled(true)
-                                        .register(LongCompactPojo.class, "longCompactPojo", new LongCompactPojoSerializer())
-                                        .register(CompactCompactPojo.class, "compactCompactPojo", new CompactCompactPojoSerializer())
+                                        .addSerializer(new LongCompactPojoSerializer())
+                                        .addSerializer(new CompactCompactPojoSerializer())
                         )
         ));
         HazelcastInstanceProxy hazelcastInstanceImpl = (HazelcastInstanceProxy) instance;
